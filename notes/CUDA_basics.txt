@@ -1,0 +1,106 @@
+docs: https://docs.nvidia.com/cuda/cuda-c-programming-guide/
+
+
+reminder:
+    memory hierarchy:
+        TLDR (fast to slow):
+            Registers > Shared > Constant > Global 
+        registers: 
+            - fastest, meant for local variable calculations
+            - 32-64 bytes per thread practical usage (gpu dependant)
+            - int, float inside kernel
+            - thread private
+        shared memory/L1:
+            - still pretty fast, used if registers overflow
+            - block local, enable cooperation between threads
+            - 48-164 kb per SM? (gpu dependant)
+        L2 cache:
+            - gpu wide
+            - 2-40 mb per SM combined (gpu dependant)
+            - __shared__ int arr[256];
+        global memory:
+            - slowest, high latency
+            - larger device wide DRAM
+            - 4-80 gb (gpu dependant)
+            - __device__ or kernel arguments
+        constant memory:
+            - read only 
+            - cached on chip for all threads
+            - 64 kb per device
+            - __constant__ float coeffs[64];
+    terminology:
+        TLDR:
+            Thread > Warp > Block > Grid
+        SM:
+            - multiple per gpu
+            - hardware unit that executes blocks/warps 
+            - contains registers, shared memory, warp schedulers
+        thread:
+            - smallest unit
+            - executes kernel combined
+            - has private registers
+        warp:
+            - group of 32 threads
+            - executed SIMD-style on SM
+        block:
+            - group of threads that shared memory
+            - synchronized with __syncthreads()
+            - allocated on SM
+        grid:
+            - groups of blocks that make up kernel launch
+
+
+
+
+__global__
+    "declares function as being a kernel"
+        (kernel: "c++ function meant to be executed in parallel on a GPU)
+        - executable on device
+        - callable from host
+    
+variables inside cuda functions:
+    cuda runtiume injects a couple variables into every kernel meant for coordinates
+    when kernel launched, cuda creates grid dimension * block dimension threads
+        (from [function name]<<<gridDim, blockDim>>>())
+    thread identifiers:
+        threadIdx.x
+        threadIdx.y
+        threadIdx.z
+    block dimensions:
+        blockDim.x
+        blockDim.y
+        blockDim.z
+    block identifiers:
+        blockIdx.x
+        blockIdx.y
+        blockIdx.z
+    grid dimensions:
+        gridDim.x
+        gridDim.y
+        gridDim.z
+    (?)special per-thread registers:
+        warpSize
+        __lane_id()
+        __activemask()
+        __syncthreads_count()
+
+__device__
+
+vec_add and vec_add_kernel:
+    methodology: must create on host, send to gpu memory for kernel, send back
+        this is necessary since gpu cannot access host memory
+    remember that the SM designates a copy of the kernel per thread and each kernel
+        with its designated x,y,z block/thread runs only once per block
+    therefore, we should always make sure there are ENOUGH THREADS TO COVER ALL ITEMS
+        note: in the case, vec_add_kernel has if-statement that will simply not run the
+            function if the designated block, thread id is greater than the number of 
+            items
+    when to use multiple blocks?
+        possible for there to be more items to handle than threads available
+        typically limited to 1024 threads per block on modern groups
+        ex + how to guard:
+            int n = 5000;                // vector length
+            int threads_per_block = 256; // common choice
+            int blocks = (n + threads_per_block - 1) / threads_per_block; // 20 blocks
+            ...
+            [function]<<<blocks, threads_per_block>>>();
