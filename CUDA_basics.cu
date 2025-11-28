@@ -84,12 +84,57 @@ int vec_add() {
 }
 
 
-// intro to shared memory:
+// intro to shared memory (C++)
+
+// this function, when all instances of threads run, loads all elements 
+//  from a global memory location into shared memory
+//  then multiplies them by 2.0 back to global 
 __global__ void shared_mem_kernel(const float* in, float* out) {
-    extern __shared__ float tile[];
+    extern __shared__ float tile[]; // see notes but extern = dynamic, __shared__ = memory location
+
+    int tid = threadIdx.x; // remember each thread has unique id
+    tile[tid] = in[tid];
+
+    // ensure all threads in block are finished before reading to out
+    __syncthreads();
+
+    out[tid] = tile[tid] * 2.0f;
 }
 
+int shared_mem() {
+    // setup host mem array
+    int n = 16;
+    size_t size = n * sizeof(float);
+    float h_in[n], h_out[n];
+    // populate with floats
+    for(int i = 0; i < n; i++) {
+        h_in[i] = float(i);
+    }
 
+    // setup device arrays as pointers
+    float *d_in, *d_out;
+    cudaMalloc(&d_in, size);
+    cudaMalloc(&d_out, size);
+
+    // send to device
+    // remember: cudaError_t cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind kind)
+    cudaMemcpy(d_in, h_in, size, cudaMemcpyHostToDevice);
+
+    // call function
+    shared_mem_kernel<<<1, n, size>>>(d_in, d_out);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(h_out, d_out, size, cudaMemcpyDeviceToHost);
+
+    std::cout << "\nshared mem output:\n";
+    for(int i = 0; i < n; i++) {
+        std::cout << h_out[i] << " ";
+    }
+    std::cout << std::endl;
+
+    return 0;
+
+}
 
 
 
@@ -97,6 +142,7 @@ __global__ void shared_mem_kernel(const float* in, float* out) {
 int main() {
     hello();
     vec_add();
+    shared_mem();
     return 0;
 }
 
@@ -120,31 +166,11 @@ int main() {
 
 
 
-// below is like a bit more advanced
+// below is like a bit more advanced, will slowly add
 
 // #define CHECK(err) if (err != cudaSuccess){ \
 //     std::cerr << "CUDA Error: " << cudaGetErrorString(err) << std::endl; exit(1); }
 
-// // ---------------------------------------------------------------
-// // 1. BASIC KERNEL + THREAD INDEXING
-// // ---------------------------------------------------------------
-
-// __global__ void add_kernel(const float* a, const float* b, float* out, int N) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i < N) out[i] = a[i] + b[i];
-// }
-
-// // ---------------------------------------------------------------
-// // 2. SHARED MEMORY EXAMPLE (simple tile copy)
-// // ---------------------------------------------------------------
-
-// __global__ void shared_memory_demo(const float* in, float* out) {
-//     extern __shared__ float tile[];
-//     int tid = threadIdx.x;
-//     tile[tid] = in[tid];     // load into shared memory
-//     __syncthreads();
-//     out[tid] = tile[tid];    // write back out
-// }
 
 // // ---------------------------------------------------------------
 // // 3. WARP SHUFFLE EXAMPLE (warp-level reduction)
