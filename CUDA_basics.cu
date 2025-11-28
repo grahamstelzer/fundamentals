@@ -214,6 +214,33 @@ int warp_reduce() {
 }
 
 
+// tiled matmult:
+#define TILE 16
+
+__global__ void matmul_tiled(const float* A, const float* B, float* C, int N) {
+    __shared__ float As[TILE][TILE];
+    __shared__ float Bs[TILE][TILE];
+
+    int row = blockIdx.y * TILE + threadIdx.y;
+    int col = blockIdx.x * TILE + threadIdx.x;
+
+    float sum = 0.0f;
+
+    for (int t = 0; t < N / TILE; t++) {
+        As[threadIdx.y][threadIdx.x] = A[row * N + t * TILE + threadIdx.x];
+        Bs[threadIdx.y][threadIdx.x] = B[(t * TILE + threadIdx.y) * N + col];
+        __syncthreads();
+
+        for (int k = 0; k < TILE; k++)
+            sum += As[threadIdx.y][k] * Bs[k][threadIdx.x];
+        __syncthreads();
+    }
+
+    C[row * N + col] = sum;
+}
+
+
+
 
 int main() {
 
@@ -251,26 +278,6 @@ int main() {
 //     std::cerr << "CUDA Error: " << cudaGetErrorString(err) << std::endl; exit(1); }
 
 
-// // ---------------------------------------------------------------
-// // 3. WARP SHUFFLE EXAMPLE (warp-level reduction)
-// // ---------------------------------------------------------------
-
-// __inline__ __device__ float warp_reduce_sum(float val) {
-//     for (int offset = 16; offset > 0; offset /= 2) {
-//         val += __shfl_down_sync(0xffffffff, val, offset);
-//     }
-//     return val;
-// }
-
-// // one-block example
-// __global__ void warp_reduce_kernel(const float* x, float* out) {
-//     float val = x[threadIdx.x];
-//     float sum = warp_reduce_sum(val);
-
-//     // write once per warp
-//     if ((threadIdx.x & 31) == 0)
-//         out[threadIdx.x / 32] = sum;
-// }
 
 // // ---------------------------------------------------------------
 // // 4. BLOCK REDUCTION (shared memory + warp shuffle)
@@ -297,33 +304,6 @@ int main() {
 //     if (tid == 0) out[0] = v;
 // }
 
-// // ---------------------------------------------------------------
-// // 5. TILED MATRIX MULTIPLY
-// // ---------------------------------------------------------------
-
-// #define TILE 16
-
-// __global__ void matmul_tiled(const float* A, const float* B, float* C, int N) {
-//     __shared__ float As[TILE][TILE];
-//     __shared__ float Bs[TILE][TILE];
-
-//     int row = blockIdx.y * TILE + threadIdx.y;
-//     int col = blockIdx.x * TILE + threadIdx.x;
-
-//     float sum = 0.0f;
-
-//     for (int t = 0; t < N / TILE; t++) {
-//         As[threadIdx.y][threadIdx.x] = A[row * N + t * TILE + threadIdx.x];
-//         Bs[threadIdx.y][threadIdx.x] = B[(t * TILE + threadIdx.y) * N + col];
-//         __syncthreads();
-
-//         for (int k = 0; k < TILE; k++)
-//             sum += As[threadIdx.y][k] * Bs[k][threadIdx.x];
-//         __syncthreads();
-//     }
-
-//     C[row * N + col] = sum;https://zhihaojia.medium.com/compiling-llms-into-a-megakernel-a-path-to-low-latency-inference-cf7840913c17
-// }
 
 // // ---------------------------------------------------------------
 // // MAIN: run and print simple demos
