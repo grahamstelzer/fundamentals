@@ -50,6 +50,7 @@ reminder:
             - executed SIMD-style on SM
         block:
             - group of threads that shared memory
+            - blocks subdivided into warps by gpu hardware for execution
             - synchronized with __syncthreads()
             - allocated on SM
         grid:
@@ -125,3 +126,28 @@ shared_mem and shared_mem_kernel:
     __syncthreads:
         in this case, must make sure all threads are done writing to tile array before 
             reading from it into out array. this is to prevent race conditions
+
+
+warp_reduce, warp_reduce_kernel and warp_reduce_sum:
+    methodology:
+        1. each thread gets a unique value designated in warp_reduce_KERNEL
+        2. warp_reduce_SUM is stored on the device
+            __inline__:
+                code inserted at call site ... this might be outdated? modern usages have heuristics?
+            __device__:
+                code designated to be sent to GPU memory
+                cannot be called except by __global__ function
+        3. each thread executes warp_reduce_SUM:
+            3.1: values <offset> distance away are read, then summed to current
+            3.2: at each step, offset is halved and the values sum this new value into current location
+                NOTE: all threads execute this the same number of times as offset changes
+                ...so thread 31 executes the same number of times as thread 1 BUT since the offset will
+                    look for 31 + offset, it will be out of bounds (autohandled or return same value)
+                AND THIS IS FINE since at the end we only care about the value at index 0 on thread 0
+                TODO?: i wonder if we could free the unused threads by applying some binary calculations
+                    on the masks at each offset step?
+            3.3: loop exits and the value returns
+            3.4: we check for the (thread x & 31) == 0 which gives thread 0 with the final result and
+                only then do we set that as the out result
+                NOTE: this is setup for multiple warp runs, since we check every thread.x that is divisible
+                    by 31 aka threads at every warp step

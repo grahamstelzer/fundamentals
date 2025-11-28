@@ -137,12 +137,91 @@ int shared_mem() {
 }
 
 
+// warp-level reuduction
+//  notes very helpful for syntax and visualization in this example
+//  methodology: each thread is given a value, then a tree reduction occurs
+//      this means that shared memory is never used, we just look at registers
+
+__inline__ __device__ float warp_reduce_sum(float val) {
+    // methodology:
+    //  magic is __shfl_down_sync() lets threads read register [curr + offset] in the same warp
+    //      this value is placed into val and summated
+    //  0xffffffff is a mask, all threads "1" and therefore are used
+    //  looping halves the offset each time
+    for (int offset = 16; offset > 0; offset /= 2) {
+        val += __shfl_down_sync(0xffffffff, val, offset);
+    }
+    return val;
+}
+
+// one-block example (though it is setup for multiple blocks)
+__global__ void warp_reduce_kernel(const float* x, float* out) {
+    float val = x[threadIdx.x];
+    float sum = warp_reduce_sum(val);
+
+    // check for threads at every warp step (32)
+    // write the values of these threads into out
+    if ((threadIdx.x & 31) == 0) {
+        out[threadIdx.x / 32] = sum;
+    }
+}
+
+int warp_reduce() {
+
+    // setup host vars
+    const int n = 64;               // 64 elements → 2 warps
+    size_t size = n * sizeof(float);
+
+    float h_x[n];
+    for (int i = 0; i < n; i++) {
+        h_x[i] = 1.0f;
+    }
+
+    // setup device ptrs
+    float *d_x, *d_out;
+    int num_warps = (n + 31) / 32;  // for d_out we only need space for few results
+    cudaMalloc(&d_x, size);
+    cudaMalloc(&d_out, num_warps * sizeof(float));
+
+    // send input to device
+    cudaMemcpy(d_x, h_x, size, cudaMemcpyHostToDevice);
+
+    // launch kernel
+    warp_reduce_kernel<<<1, n>>>(d_x, d_out);
+    // sync
+    cudaDeviceSynchronize();
+
+    // get results
+    float h_out[num_warps];
+    cudaMemcpy(h_out, d_out, num_warps * sizeof(float), cudaMemcpyDeviceToHost);
+
+
+    // debug prints:
+
+    // per warp
+    std::cout << "Warp sums: ";
+    for (int i = 0; i < num_warps; i++) {
+        std::cout << h_out[i] << " ";
+    }
+    std::cout << std::endl;
+
+    // total
+    float total = 0.0f;
+    for (int i = 0; i < num_warps; i++) total += h_out[i];
+    std::cout << "Total sum: " << total << std::endl;
+    
+    return 0;
+}
+
 
 
 int main() {
+
     hello();
     vec_add();
     shared_mem();
+    warp_reduce();
+
     return 0;
 }
 
@@ -243,7 +322,7 @@ int main() {
 //         __syncthreads();
 //     }
 
-//     C[row * N + col] = sum;
+//     C[row * N + col] = sum;https://zhihaojia.medium.com/compiling-llms-into-a-megakernel-a-path-to-low-latency-inference-cf7840913c17
 // }
 
 // // ---------------------------------------------------------------
