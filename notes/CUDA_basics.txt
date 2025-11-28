@@ -1,6 +1,12 @@
 docs: https://docs.nvidia.com/cuda/cuda-c-programming-guide/
 
 
+quick defintions:
+    cudaError_t cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind kind)
+        ex: cudaMemcpy(d_in, h_in, size, cudaMemcpyHostToDevice);
+
+
+
 reminder:
     memory hierarchy:
         TLDR (fast to slow):
@@ -78,7 +84,7 @@ variables inside cuda functions:
         gridDim.x
         gridDim.y
         gridDim.z
-    (?)special per-thread registers:
+    (?)special per-thread registers:cudaError_t cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind kind)
         warpSize
         __lane_id()
         __activemask()
@@ -104,3 +110,18 @@ vec_add and vec_add_kernel:
             int blocks = (n + threads_per_block - 1) / threads_per_block; // 20 blocks
             ...
             [function]<<<blocks, threads_per_block>>>();
+
+
+shared_mem and shared_mem_kernel:
+    extern:
+        size of memory used defined dynamically at launch
+    __shared__:
+        variable (in this case an array) is on shared memory:
+            - fast on chip memory
+            - all blocks can see and utilize
+            - scoped per block, so each block has its own shared memory instance
+        NOTE:
+            third value in [function]<<<block, thread, shared_memory_in_bytes_per_block>>>()
+    __syncthreads:
+        in this case, must make sure all threads are done writing to tile array before 
+            reading from it into out array. this is to prevent race conditions
